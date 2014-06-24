@@ -49,6 +49,7 @@ use work.wishbone_pkg.all;
 use work.fine_delay_pkg.all;
 --use work.etherbone_pkg.all;
 use work.wr_xilinx_pkg.all;
+use work.genram_pkg.all;
 
 use work.synthesis_descriptor.all;
 
@@ -122,7 +123,7 @@ entity spec_top is
       dac_cs2_n_o : out std_logic;
 
       button1_i : in std_logic := '1';
-      button2_i : in std_logic := '1';
+      button2_i : in std_logic;
 
       fmc_scl_b : inout std_logic := '1';
       fmc_sda_b : inout std_logic := '1';
@@ -192,7 +193,7 @@ entity spec_top is
       -- UART
       -----------------------------------------
 
-      uart_rxd_i : in  std_logic := '1';
+      uart_rxd_i : in  std_logic;
       uart_txd_o : out std_logic
       );
 
@@ -200,6 +201,29 @@ end spec_top;
 
 architecture rtl of spec_top is
 
+component  wb_debugger is
+	generic(	g_dbg_dpram_size	: integer := 40960/4;
+				g_dbg_init_file: string;
+				g_reset_vector	:  t_wishbone_address := x"00000000";
+				g_msi_queues 	: natural := 1;
+				g_profile		: string := "medium_icache_debug";
+				g_timers			: integer := 1);
+    Port ( clk_sys 		: in  STD_LOGIC;
+           reset_n 		: in  STD_LOGIC;
+           master_i 		: in  t_wishbone_master_in;
+           master_o 		: out t_wishbone_master_out;
+			  slave_ram_i		: in  t_wishbone_slave_in;
+			  slave_ram_o 		: out t_wishbone_slave_out;
+			  wrpc_uart_rxd_i: inout std_logic;
+			  wrpc_uart_txd_o: inout std_logic;
+           uart_rxd_i 	: in  STD_LOGIC;
+           uart_txd_o 	: out STD_LOGIC;
+			  running_indicator : out STD_LOGIC;
+			  control_button : in std_logic);
+end component;
+
+  signal wrpc_uart_rxd_i: std_logic;
+  signal wrpc_uart_txd_o: std_logic;
 
   component spec_serial_dac_arb
     generic(
@@ -259,24 +283,29 @@ architecture rtl of spec_top is
     end if;
   end f_int2bool;
 
-  constant c_NUM_WB_MASTERS : integer := 3;
-  constant c_NUM_WB_SLAVES  : integer := 2;
+  constant c_NUM_WB_MASTERS : integer := 4;
+  constant c_NUM_WB_SLAVES  : integer := 3;
 
   constant c_MASTER_GENNUM    : integer := 0;
   constant c_MASTER_ETHERBONE : integer := 1;
+  constant c_MASTER_DEBUGGER  : integer := 2;
+
 
   constant c_SLAVE_FD       : integer := 0;
   constant c_SLAVE_WRCORE   : integer := 1;
   constant c_SLAVE_VIC      : integer := 2;
-  constant c_DESC_SYNTHESIS : integer := 3;
-  constant c_DESC_REPO_URL  : integer := 4;
+  constant c_SLAVE_DEBG_RAM : integer := 3;
+  constant c_DESC_SYNTHESIS : integer := 4;
+  constant c_DESC_REPO_URL  : integer := 5;
 
   constant c_WRCORE_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"0003ffff", x"00030000");
+  constant c_dbg_dpram_size	: integer := 40960/4;
 
   constant c_INTERCONNECT_LAYOUT : t_sdb_record_array(c_NUM_WB_MASTERS+1 downto 0) :=
     (c_SLAVE_WRCORE   => f_sdb_embed_bridge(c_WRCORE_BRIDGE_SDB, x"000c0000"),
      c_SLAVE_FD       => f_sdb_embed_device(c_FD_SDB_DEVICE, x"00080000"),
      c_SLAVE_VIC      => f_sdb_embed_device(c_xwb_vic_sdb, x"00090000"),
+	  c_SLAVE_DEBG_RAM => f_sdb_embed_device(f_xwb_dpram(c_dbg_dpram_size), x"00070000"),
      c_DESC_SYNTHESIS => f_sdb_embed_synthesis(c_sdb_synthesis_info),
      c_DESC_REPO_URL  => f_sdb_embed_repo_url(c_sdb_repo_url));
 
@@ -647,7 +676,7 @@ begin
       phy_rst_o          => phy_rst,
       phy_loopen_o       => phy_loopen,
 
-      led_act_o  => LED_RED,
+      led_act_o  => open,
       led_link_o => LED_GREEN,
 
       scl_o     => wrc_scl_out,
@@ -660,8 +689,8 @@ begin
       sfp_sda_i => sfp_sda_in,
       sfp_det_i => sfp_mod_def0_b,
 
-      uart_rxd_i => uart_rxd_i,
-      uart_txd_o => uart_txd_o,
+      uart_rxd_i => wrpc_uart_rxd_i,
+      uart_txd_o => wrpc_uart_txd_o,
 
       owr_en_o => wrc_owr_en,
       owr_i    => wrc_owr_in,
@@ -886,6 +915,22 @@ begin
   fd_onewire_b <= '0' when fd_owr_en = '1' else 'Z';
   fd_owr_in    <= fd_onewire_b;
 
+
+	U_Debugger : wb_debugger
+	generic map(g_dbg_init_file => "dbg_code.ram")
+    Port map( clk_sys 		=> clk_sys,
+           reset_n 		=> local_reset_n,
+           master_i 		=> cnx_slave_out(c_MASTER_DEBUGGER),
+           master_o 		=> cnx_slave_in(c_MASTER_DEBUGGER),
+			  slave_ram_i	=> cnx_master_out(c_SLAVE_DEBG_RAM),
+			  slave_ram_o 	=> cnx_master_in(c_SLAVE_DEBG_RAM),
+			  
+			  wrpc_uart_rxd_i=> wrpc_uart_rxd_i,
+			  wrpc_uart_txd_o=> wrpc_uart_txd_o,
+           uart_rxd_i 	=> uart_rxd_i,
+           uart_txd_o 	=> uart_txd_o,
+			  running_indicator => LED_RED,
+			  control_button => button2_i);
 
 end rtl;
 
