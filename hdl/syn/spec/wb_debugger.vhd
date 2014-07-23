@@ -7,10 +7,10 @@
 -- Module Name:    wb_debugger - Behavioral 
 -- Project Name: 
 -- Target Devices: 
--- Tool versions: 
--- Description: 
+-- Tool versions:
+-- Description:
 --
--- Dependencies: 
+-- Dependencies:
 --
 -- Revision: 
 -- Revision 0.01 - File Created
@@ -47,13 +47,15 @@ entity wb_debugger is
 				g_reset_vector	:  t_wishbone_address := x"00000000";
 				g_msi_queues 	: natural := 1;
 				g_profile		: string := "medium_icache_debug";
-				g_timers			: integer := 1);
+				g_timers			: integer := 1;
+				g_slave_interface_mode : t_wishbone_interface_mode := PIPELINED;
+				g_slave_granularity : t_wishbone_address_granularity := BYTE);
     Port ( clk_sys 		: in  STD_LOGIC;
            reset_n 		: in  STD_LOGIC;
            master_i 		: in  t_wishbone_master_in;
            master_o 		: out t_wishbone_master_out;
-			  slave_ram_i	: in  t_wishbone_slave_in;
-			  slave_ram_o 	: out t_wishbone_slave_out;			  
+			  slave_i		: in  t_wishbone_slave_in;
+			  slave_o 		: out t_wishbone_slave_out;			  
 			  wrpc_uart_rxd_i: inout std_logic;
 			  wrpc_uart_txd_o: inout std_logic;
            uart_rxd_i 	: in  STD_LOGIC;
@@ -86,29 +88,61 @@ function f_xwb_dpram_dbg(g_size : natural) return t_sdb_device
     return result;
   end f_xwb_dpram_dbg;
   
-  
   constant c_NUM_TIMERS		 : natural range 1 to 3 := 1;
   
   constant c_NUM_WB_MASTERS : integer := 6;
-  constant c_NUM_WB_SLAVES  : integer := 2;
+  constant c_NUM_WB_SLAVES  : integer := 3;
 
-  constant c_MASTER_LM32	: integer := 0; ---has two
+  constant c_MASTER_LM32   : integer := 0; ---has two
+  constant c_MASTER_ADAPT  : integer := 2;
   --constant c_MASTER_OUT_PORT : integer := 2;
   
   constant c_EXT_BRIDGE			: integer := 0;
-  constant c_SLAVE_DPRAM	 	: integer := 1;
-  constant c_SLAVE_UART		 	: integer := 2;
-  constant c_SLAVE_TICS		 	: integer := 3;
-  constant c_SLAVE_TIMER_IRQ	: integer := 4;
-  constant c_SLAVE_IRQ_CTRL	: integer := 5;
+  constant c_SLAVE_DPRAM		: integer := 1;
+  --constant c_SEC_BRIDGE			: integer := 1;
+  constant c_SLAVE_TICS		 	: integer := 2;
+  constant c_SLAVE_TIMER_IRQ	: integer := 3;
+  constant c_SLAVE_IRQ_CTRL	: integer := 4;
+  constant c_SLAVE_UART       : integer := 5;
 
-  constant c_EXT_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"003fffff", x"00300000");
+  constant c_EXT_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"00090000", x"00000000");
+  
+  
+  --- SEC
+--  constant c_NUM_SEC_WB_MASTERS  : integer := 2;
+--  constant c_NUM_SEC_WB_SLAVES   : integer := 2;
+--  
+--  constant c_SEC_MASTER_CBAR		: integer := 0;
+--  constant c_SEC_MASTER_ADAPT	   : integer := 1;
+--  constant c_SEC_SLAVE_DPRAM	 	: integer := 0;
+--  constant c_SEC_SLAVE_UART	 	: integer := 1;
 	 
   --constant init_lm32_addr : t_wishbone_address := x"00040000";
 
   --constant g_dpram_size		: integer := 114688/4;  --in 32-bit words
   constant c_FREQ_DIVIDER	: integer := 62500; -- LM32 clk = 62.5 Mhz
   
+  component chipscope_ila
+    port (
+      CONTROL : inout std_logic_vector(35 downto 0);
+      CLK     : in    std_logic;
+      TRIG0   : in    std_logic_vector(31 downto 0);
+      TRIG1   : in    std_logic_vector(31 downto 0);
+      TRIG2   : in    std_logic_vector(31 downto 0);
+      TRIG3   : in    std_logic_vector(31 downto 0));
+  end component;
+
+  component chipscope_icon
+    port (
+      CONTROL0 : inout std_logic_vector (35 downto 0));
+  end component;
+
+  signal CONTROL : std_logic_vector(35 downto 0);
+  signal CLK     : std_logic;
+  signal TRIG0   : std_logic_vector(31 downto 0);
+  signal TRIG1   : std_logic_vector(31 downto 0);
+  signal TRIG2   : std_logic_vector(31 downto 0);
+  signal TRIG3   : std_logic_vector(31 downto 0);
   
   
   constant c_uart_sdb_dbg : t_sdb_device := (
@@ -137,31 +171,58 @@ function f_xwb_dpram_dbg(g_size : natural) return t_sdb_device
       addr_first  => x"0000000000000000",
       addr_last   => x"0000000000000000",
       product     => (
-        vendor_id => x"000000000000CE42",  -- GSI
+        vendor_id => x"000000000000CE42",  -- GSIx
         device_id => x"adabadaa",
         version   => x"00000001",
         date      => x"20111004",
         name      => "WB-Tics-Debugger   ")));
-		  
+
+
+--constant c_SEC_INTERCONNECT_LAYOUT : t_sdb_record_array(c_NUM_SEC_WB_MASTERS-1 downto 0) :=
+--    (c_SEC_SLAVE_DPRAM => f_sdb_embed_device(f_xwb_dpram_dbg(g_dbg_dpram_size), x"00000000"),
+--	  c_SEC_SLAVE_UART  => f_sdb_embed_device(c_uart_sdb_dbg, x"00020000"));
+
+--  constant c_SEC_SDB_ADDRESS : t_wishbone_address := x"00030000";
+--  constant c_SEC_BRIDGE_SDB  : t_sdb_bridge       :=
+--    f_xwb_bridge_layout_sdb(true, c_SEC_INTERCONNECT_LAYOUT, c_SEC_SDB_ADDRESS);		  
+
+--  constant c_INTERCONNECT_LAYOUT : t_sdb_record_array(c_NUM_WB_MASTERS-1 downto 0) :=
+--    (c_EXT_BRIDGE		 => f_sdb_embed_bridge(c_EXT_BRIDGE_SDB,   x"01000000"),
+--	  c_SEC_BRIDGE     => f_sdb_embed_bridge(c_SEC_BRIDGE_SDB,   x"00040000"),
+--	  c_SLAVE_TICS	    => f_sdb_embed_device(c_xwb_tics_sdb_dbg, x"00020000"),
+--	  c_SLAVE_TIMER_IRQ=> f_sdb_embed_device(c_irq_timer_sdb,    x"00020100"),
+--	  c_SLAVE_IRQ_CTRL => f_sdb_embed_device(c_irq_ctrl_sdb,     x"00020300"));
+--	  c_SLAVE_FK_DPRAM => f_sdb_embed_device(f_xwb_dpram_dbg(g_dbg_dpram_size), x"00000000"));  
 
   constant c_INTERCONNECT_LAYOUT : t_sdb_record_array(c_NUM_WB_MASTERS-1 downto 0) :=
-    (c_EXT_BRIDGE		 => f_sdb_embed_bridge(c_EXT_BRIDGE_SDB, x"00c00000"), 
-	  c_SLAVE_DPRAM	 => f_sdb_embed_device(f_xwb_dpram_dbg(g_dbg_dpram_size), g_reset_vector),
-	  c_SLAVE_UART	    => f_sdb_embed_device(c_uart_sdb_dbg, x"00600000"), -- UART
-	  c_SLAVE_TICS	    => f_sdb_embed_device(c_xwb_tics_sdb_dbg, x"00700000"),
-	  c_SLAVE_TIMER_IRQ=> f_sdb_embed_device(c_irq_timer_sdb, x"00750000"),
-	  c_SLAVE_IRQ_CTRL	=> f_sdb_embed_device(c_irq_ctrl_sdb, x"00770000"));  
+    (c_EXT_BRIDGE		 => f_sdb_embed_bridge(c_EXT_BRIDGE_SDB,   x"00100000"),
+	  c_SLAVE_DPRAM    => f_sdb_embed_device(f_xwb_dpram_dbg(g_dbg_dpram_size), x"00000000"),
+	  c_SLAVE_TICS	    => f_sdb_embed_device(c_xwb_tics_sdb_dbg, x"00020400"),
+	  c_SLAVE_TIMER_IRQ=> f_sdb_embed_device(c_irq_timer_sdb,    x"00020300"),
+	  c_SLAVE_IRQ_CTRL => f_sdb_embed_device(c_irq_ctrl_sdb,     x"00020200"),
+	  c_SLAVE_UART     => f_sdb_embed_device(c_uart_sdb_dbg,     x"00020100")
+	  );
 
-  constant c_SDB_ADDRESS : t_wishbone_address := x"00400000";
+  constant c_SDB_ADDRESS : t_wishbone_address := x"00020600";
   
+ 
   signal cnx_master_out : t_wishbone_master_out_array(c_NUM_WB_MASTERS-1 downto 0);
   signal cnx_master_in  : t_wishbone_master_in_array(c_NUM_WB_MASTERS-1 downto 0);
 
   signal cnx_slave_out : t_wishbone_slave_out_array(c_NUM_WB_SLAVES-1 downto 0);
-  signal cnx_slave_in  : t_wishbone_slave_in_array(c_NUM_WB_SLAVES-1 downto 0);
+  signal cnx_slave_in  : t_wishbone_slave_in_array(c_NUM_WB_SLAVES-1 downto 0);  
+  
+--  signal cnx_sec_master_out : t_wishbone_master_out_array(c_NUM_SEC_WB_MASTERS-1 downto 0);
+--  signal cnx_sec_master_in  : t_wishbone_master_in_array(c_NUM_SEC_WB_MASTERS-1 downto 0);
+
+--  signal cnx_sec_slave_out : t_wishbone_slave_out_array(c_NUM_SEC_WB_SLAVES-1 downto 0);
+--  signal cnx_sec_slave_in  : t_wishbone_slave_in_array(c_NUM_SEC_WB_SLAVES-1 downto 0);
   
   signal debugger_ram_wbb_i : t_wishbone_slave_in;
   signal debugger_ram_wbb_o : t_wishbone_slave_out;
+  
+  signal aux_slave_i : t_wishbone_slave_in;
+  signal aux_slave_o : t_wishbone_slave_out;
   
   signal periph_slave_i : t_wishbone_slave_in_array(0 to 2);
   signal periph_slave_o : t_wishbone_slave_out_array(0 to 2);
@@ -190,13 +251,27 @@ begin
   master_o <= cnx_master_out(c_EXT_BRIDGE);
   cnx_master_in(c_EXT_BRIDGE) <= master_i;
   
+  aux_slave_i <= slave_i;
+  slave_o <= aux_slave_o;
+  
+  trig0 <= cnx_slave_in(c_MASTER_ADAPT).dat;
+  trig1 <= cnx_slave_in(c_MASTER_ADAPT).adr;
+  
+  trig2 <= aux_slave_i.dat;
+  trig3 <= aux_slave_i.adr;
+  
+--  cnx_master_in(c_SEC_BRIDGE) <= cnx_sec_slave_out(c_SEC_MASTER_CBAR);  
+--  cnx_sec_slave_in(c_SEC_MASTER_CBAR) <= cnx_master_out(c_SEC_BRIDGE);
+--  cnx_master_out(c_SEC_BRIDGE) <= cnx_sec_slave_in(c_SEC_MASTER_CBAR);
+--  cnx_sec_slave_out(c_SEC_MASTER_CBAR) <= cnx_master_in(c_SEC_BRIDGE);
+  
   controller : process (clk_sys)
 	begin 
 		if (rising_edge(clk_sys)) then
 			if (control_button = '0' and (state_control /= x"ffffffffff")) then
 				state_control <= state_control + 1;
 			else
-				if ((state_control /= x"0000000000") and (state_control <= x"3B9ACA0")) then -- 62500000 -> 0.5s
+				if ((state_control /= x"0000000000") and (state_control <= x"3B9ACA0")) then --0.5s
 					forced_lm32_reset_n <= not forced_lm32_reset_n;
 				elsif (state_control > x"3B9ACA0") then
 					use_dbg_uart <= not use_dbg_uart;
@@ -225,6 +300,8 @@ begin
       rst_n_i   => reset_n,
 
       -- Wishbone
+--		slave_i => cnx_sec_master_out(c_SEC_SLAVE_UART),
+--      slave_o => cnx_sec_master_in(c_sec_SLAVE_UART),
 		slave_i => cnx_master_out(c_SLAVE_UART),
       slave_o => cnx_master_in(c_SLAVE_UART),
       desc_o  => open,
@@ -291,10 +368,12 @@ begin
       clk_sys_i => clk_sys,
       rst_n_i   => reset_n,
 
-      slave1_i => cnx_master_out(c_SLAVE_DPRAM),
+--      slave1_i => cnx_sec_master_out(c_SEC_SLAVE_DPRAM),
+--      slave1_o => cnx_sec_master_in(c_SEC_SLAVE_DPRAM),     
+		slave1_i => cnx_master_out(c_SLAVE_DPRAM),
       slave1_o => cnx_master_in(c_SLAVE_DPRAM),
       slave2_i => debugger_ram_wbb_i,
-      slave2_o => debugger_ram_wbb_o
+      slave2_o => open
       );
 
 ---------------------------------------------------------------------------
@@ -340,6 +419,53 @@ begin
       slave_o   => cnx_slave_out,
       master_i  => cnx_master_in,
       master_o  => cnx_master_out);
+	
+-- U_Sec_Intercon : xwb_sdb_crossbar
+--    generic map (
+--      g_num_masters => c_NUM_SEC_WB_SLAVES,
+--      g_num_slaves  => c_NUM_SEC_WB_MASTERS,
+--      g_registered  => true,
+--      g_wraparound  => true,
+--      g_layout      => c_SEC_INTERCONNECT_LAYOUT,
+--      g_sdb_addr    => c_SEC_SDB_ADDRESS)
+--    port map (
+--      clk_sys_i => clk_sys,
+--      rst_n_i   => reset_n,
+--      slave_i   => cnx_sec_slave_in,
+--      slave_o   => cnx_sec_slave_out,
+--      master_i  => cnx_sec_master_in,
+--      master_o  => cnx_sec_master_out);
+
+  U_Adapter1 : wb_slave_adapter
+    generic map (
+      g_master_use_struct  => true,
+      g_master_mode        => g_slave_interface_mode,
+      g_master_granularity => BYTE,
+      g_slave_use_struct   => true,
+      g_slave_mode         => g_slave_interface_mode,
+      g_slave_granularity  => g_slave_granularity)
+    port map (
+      clk_sys_i => clk_sys,
+      rst_n_i   => reset_n,
+      slave_i   => aux_slave_i,
+      slave_o   => aux_slave_o,
+      master_i  => cnx_slave_out(c_MASTER_ADAPT),
+      master_o  => cnx_slave_in(c_MASTER_ADAPT));      
+--		master_i  => cnx_sec_slave_out(c_SEC_MASTER_ADAPT),
+--      master_o  => cnx_sec_slave_in(c_SEC_MASTER_ADAPT));
+
+  chipscope_ila_1 : chipscope_ila
+    port map (
+      CONTROL => CONTROL,
+      CLK     => clk_sys,
+      TRIG0   => TRIG0,
+      TRIG1   => TRIG1,
+      TRIG2   => TRIG2,
+      TRIG3   => TRIG3);
+
+  chipscope_icon_1 : chipscope_icon
+    port map (
+      CONTROL0 => CONTROL);
 		
 end Behavioral;
 
