@@ -105,7 +105,7 @@ function f_xwb_dpram_dbg(g_size : natural) return t_sdb_device
   constant c_SLAVE_IRQ_CTRL	: integer := 4;
   constant c_SLAVE_UART       : integer := 5;
 
-  constant c_EXT_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"00090000", x"00000000");
+  constant c_EXT_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"000effff", x"00000000");
   
   
   --- SEC
@@ -143,7 +143,7 @@ function f_xwb_dpram_dbg(g_size : natural) return t_sdb_device
   signal TRIG1   : std_logic_vector(31 downto 0);
   signal TRIG2   : std_logic_vector(31 downto 0);
   signal TRIG3   : std_logic_vector(31 downto 0);
-  
+--  
   
   constant c_uart_sdb_dbg : t_sdb_device := (
     abi_class     => x"0000",              -- undocumented device
@@ -224,6 +224,9 @@ function f_xwb_dpram_dbg(g_size : natural) return t_sdb_device
   signal aux_slave_i : t_wishbone_slave_in;
   signal aux_slave_o : t_wishbone_slave_out;
   
+  signal sl_addr_i : t_wishbone_address := (others => '0'); 
+  
+  
   signal periph_slave_i : t_wishbone_slave_in_array(0 to 2);
   signal periph_slave_o : t_wishbone_slave_out_array(0 to 2);
   signal periph_dummy	: std_logic_vector (9 downto 0);
@@ -251,14 +254,19 @@ begin
   master_o <= cnx_master_out(c_EXT_BRIDGE);
   cnx_master_in(c_EXT_BRIDGE) <= master_i;
   
-  aux_slave_i <= slave_i;
-  slave_o <= aux_slave_o;
+--  aux_slave_i.adr(31 downto 20) <= (others => '0');
+--  aux_slave_i <= slave_i;
+--  slave_o <= aux_slave_o;
   
-  trig0 <= cnx_slave_in(c_MASTER_ADAPT).dat;
+  trig0(0) <= cnx_slave_in(c_MASTER_ADAPT).cyc;
+  trig0(1) <= cnx_master_out(c_SLAVE_DPRAM).cyc;
+--  trig0(2) <= aux_slave_i.cyc;
+  trig0(3) <= cnx_master_in(c_SLAVE_DPRAM).ack;
+--  
   trig1 <= cnx_slave_in(c_MASTER_ADAPT).adr;
-  
-  trig2 <= aux_slave_i.dat;
-  trig3 <= aux_slave_i.adr;
+--  
+  trig2 <= cnx_master_out(c_SLAVE_DPRAM).adr;
+--  trig3 <= aux_slave_i.adr;
   
 --  cnx_master_in(c_SEC_BRIDGE) <= cnx_sec_slave_out(c_SEC_MASTER_CBAR);  
 --  cnx_sec_slave_in(c_SEC_MASTER_CBAR) <= cnx_master_out(c_SEC_BRIDGE);
@@ -290,7 +298,7 @@ begin
 --------------------------------------
   UART : xwb_simple_uart
     generic map(
-      g_with_virtual_uart   => false,
+      g_with_virtual_uart   => true,
       g_with_physical_uart  => true,
       g_interface_mode      => PIPELINED,
       g_address_granularity => BYTE
@@ -441,16 +449,26 @@ begin
       g_master_use_struct  => true,
       g_master_mode        => g_slave_interface_mode,
       g_master_granularity => BYTE,
-      g_slave_use_struct   => true,
+      g_slave_use_struct   => false,
       g_slave_mode         => g_slave_interface_mode,
       g_slave_granularity  => g_slave_granularity)
     port map (
       clk_sys_i => clk_sys,
       rst_n_i   => reset_n,
-      slave_i   => aux_slave_i,
-      slave_o   => aux_slave_o,
-      master_i  => cnx_slave_out(c_MASTER_ADAPT),
-      master_o  => cnx_slave_in(c_MASTER_ADAPT));      
+		master_i  => cnx_slave_out(c_MASTER_ADAPT),
+      master_o  => cnx_slave_in(c_MASTER_ADAPT),
+      sl_adr_i(c_wishbone_address_width-1 downto 16)  => (others => '0'),
+      sl_adr_i(15 downto 0)   => slave_i.adr(15 downto 0),
+      sl_dat_i   => slave_i.dat,
+      sl_sel_i   => slave_i.sel,
+      sl_cyc_i   => slave_i.cyc,
+      sl_stb_i   => slave_i.stb,
+      sl_we_i    => slave_i.we,
+      sl_dat_o   => slave_o.dat,
+      sl_ack_o   => slave_o.ack,
+      sl_err_o   => slave_o.err,
+      sl_rty_o   => slave_o.rty,
+      sl_stall_o => slave_o.stall);      
 --		master_i  => cnx_sec_slave_out(c_SEC_MASTER_ADAPT),
 --      master_o  => cnx_sec_slave_in(c_SEC_MASTER_ADAPT));
 
