@@ -11,4 +11,4 @@ syn_project = "spec_fine_delay.xise"
 
 modules = { "local" : [ "../../top/spec", "../../platform" ] }
 
-files = "wrc-release.ram"
+files = ["wb_debugger.vhd", "debugger_pkg.vhd", "wrc-ethb.ram", "dbg_code.ram"]
