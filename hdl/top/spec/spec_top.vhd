@@ -50,6 +50,7 @@ use work.fine_delay_pkg.all;
 use work.etherbone_pkg.all;
 use work.wr_xilinx_pkg.all;
 use work.genram_pkg.all;
+use work.debugger_pkg.all;
 
 use work.synthesis_descriptor.all;
 
@@ -201,29 +202,6 @@ end spec_top;
 
 architecture rtl of spec_top is
 
-component  wb_debugger is
-	generic(	g_dbg_dpram_size	: integer := 40960/4;
-				g_dbg_init_file: string;
-				g_reset_vector	:  t_wishbone_address := x"00000000";
-				g_msi_queues 	: natural := 1;
-				g_profile		: string := "medium_icache_debug";
-				g_timers			: integer := 1;				
-				g_slave_interface_mode : t_wishbone_interface_mode := PIPELINED;
-				g_slave_granularity : t_wishbone_address_granularity := BYTE);
-    Port ( clk_sys 		: in  STD_LOGIC;
-           reset_n 		: in  STD_LOGIC;
-           master_i 		: in  t_wishbone_master_in;
-           master_o 		: out t_wishbone_master_out;
-			  slave_i		: in  t_wishbone_slave_in;
-			  slave_o 		: out t_wishbone_slave_out;
-			  wrpc_uart_rxd_i: inout std_logic;
-			  wrpc_uart_txd_o: inout std_logic;
-           uart_rxd_i 	: in  STD_LOGIC;
-           uart_txd_o 	: out STD_LOGIC;
-			  running_indicator : out STD_LOGIC;
-			  control_button : in std_logic);
-end component;
-
   signal wrpc_uart_rxd_i: std_logic;
   signal wrpc_uart_txd_o: std_logic;
 
@@ -292,7 +270,6 @@ end component;
   constant c_MASTER_ETHERBONE : integer := 1;
   constant c_MASTER_DEBUGGER  : integer := 2;
 
-
   constant c_SLAVE_FD       : integer := 0;
   constant c_SLAVE_WRCORE   : integer := 1;
   constant c_SLAVE_VIC      : integer := 2;
@@ -301,54 +278,12 @@ end component;
   constant c_DESC_REPO_URL  : integer := 5;
 
   constant c_WRCORE_BRIDGE_SDB : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"0003ffff", x"00030000");
-  --constant c_DEBUG_BRIDGE_SDB  : t_sdb_bridge := f_xwb_bridge_manual_sdb(x"0004ffff", x"00020500");
-  constant c_dbg_dpram_size	: integer := 40960/4;
-
-constant c_xwb_slave_dbg_sdb : t_sdb_device := (
-    abi_class     => x"0000",              -- undocumented device
-    abi_ver_major => x"01",
-    abi_ver_minor => x"00",
-    wbd_endian    => c_sdb_endian_big,
-    wbd_width     => x"7",                 -- 8/16/32-bit port granularity
-    sdb_component => (
-      addr_first  => x"0000000000000000",
-      addr_last   => x"00000000000201ff",
-      product     => (
-        vendor_id => x"badc0ffeeaddbeef",  -- Jose Jimenez
-        device_id => x"abadeeed",
-        version   => x"00000001",
-        date      => x"20111004",
-        name      => "DBG-Slave-Interface")));
-
---function f_xwb_slave_dbg_sdb(g_size : natural) return t_sdb_device
---  is
---    variable result : t_sdb_device;
---  begin
---    result.abi_class     := x"0001"; -- RAM device
---    result.abi_ver_major := x"01";
---    result.abi_ver_minor := x"00";
---    result.wbd_width     := x"7"; -- 32/16/8-bit supported
---    result.wbd_endian    := c_sdb_endian_big;
---    
---    result.sdb_component.addr_first := (others => '0');
---    result.sdb_component.addr_last  := std_logic_vector(to_unsigned(g_size*4-1, 64));
---    
---    result.sdb_component.product.vendor_id := x"000000000000CE42"; -- CERN
---    result.sdb_component.product.device_id := x"abadeeed";
---    result.sdb_component.product.version   := x"00000001";
---    result.sdb_component.product.date      := x"20120305";
---    result.sdb_component.product.name      := "DBG-Slave-Interface";
---    
---    return result;
---  end f_xwb_slave_dbg_sdb;
 
   constant c_INTERCONNECT_LAYOUT : t_sdb_record_array(c_NUM_WB_MASTERS+1 downto 0) :=
-    (c_SLAVE_WRCORE   => f_sdb_embed_bridge(c_WRCORE_BRIDGE_SDB, x"000c0000"),
-     c_SLAVE_FD       => f_sdb_embed_device(c_FD_SDB_DEVICE, x"00080000"),
-     c_SLAVE_VIC      => f_sdb_embed_device(c_xwb_vic_sdb, x"00090000"),
-	  --c_SLAVE_DEBG     => f_sdb_embed_device(f_xwb_slave_dbg_sdb(c_dbg_dpram_size), x"00040000"),
-	  c_SLAVE_DEBG     => f_sdb_embed_device(c_xwb_slave_dbg_sdb, x"00040000"),
-	  --c_SLAVE_DEBG     => f_sdb_embed_bridge(c_DEBUG_BRIDGE_SDB, x"00040000"),
+    (c_SLAVE_WRCORE   => f_sdb_embed_bridge(c_WRCORE_BRIDGE_SDB,  x"000c0000"),
+     c_SLAVE_FD       => f_sdb_embed_device(c_FD_SDB_DEVICE,      x"00080000"),
+     c_SLAVE_VIC      => f_sdb_embed_device(c_xwb_vic_sdb,        x"00090000"),
+     c_SLAVE_DEBG     => f_sdb_embed_device(c_xwb_dbg_slave_sdb,  x"00040000"),
      c_DESC_SYNTHESIS => f_sdb_embed_synthesis(c_sdb_synthesis_info),
      c_DESC_REPO_URL  => f_sdb_embed_repo_url(c_sdb_repo_url));
 
@@ -961,21 +896,26 @@ begin
 
 
 	U_Debugger : wb_debugger
-	generic map(g_dbg_init_file => "dbg_code.ram")
-    Port map( clk_sys 		=> clk_sys,
-           reset_n 		=> local_reset_n,
-           master_i 		=> cnx_slave_out(c_MASTER_DEBUGGER),
-           master_o 		=> cnx_slave_in(c_MASTER_DEBUGGER),
-			  slave_i		=> cnx_master_out(c_SLAVE_DEBG),
-			  slave_o 		=> cnx_master_in(c_SLAVE_DEBG),
-			  
-			  wrpc_uart_rxd_i   => wrpc_uart_rxd_i,
-			  wrpc_uart_txd_o   => wrpc_uart_txd_o,
-           uart_rxd_i 	     => uart_rxd_i,
-           uart_txd_o 	     => uart_txd_o,
-			  running_indicator => LED_RED,
-			  control_button    => button2_i);
+    generic map(
+      g_dbg_init_file   => "dbg_code.ram",
+      g_dbg_dpram_size  => 114688/4
+      )
+    port map(
+      clk_sys => clk_sys,
+      reset_n => local_reset_n,
+
+      master_i  => cnx_slave_out(c_MASTER_DEBUGGER),
+      master_o  => cnx_slave_in(c_MASTER_DEBUGGER),
+      slave_i   => cnx_master_out(c_SLAVE_DEBG),
+      slave_o   => cnx_master_in(c_SLAVE_DEBG),
+ 
+      wrpc_uart_rxd_i => wrpc_uart_rxd_i,
+      wrpc_uart_txd_o => wrpc_uart_txd_o,
+      uart_rxd_i      => uart_rxd_i,
+      uart_txd_o      => uart_txd_o,
+      
+      dbg_indicator       => LED_RED,
+      dbg_control_select  => button2_i
+      );
 
 end rtl;
-
-
