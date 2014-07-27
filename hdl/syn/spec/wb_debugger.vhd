@@ -189,7 +189,7 @@ architecture Behavioral of wb_debugger is
    
   signal dummy_debugger_ram_wbb_i : t_wishbone_slave_in;
 
-  signal forced_lm32_reset_n : std_logic := '1';
+  signal forced_lm32_reset_n : std_logic := '0';
   
   signal irq_slave_i : t_wishbone_slave_in_array(g_msi_queues-1 to 0);
   signal irq_slave_o : t_wishbone_slave_out_array(g_msi_queues-1 to 0);
@@ -202,7 +202,7 @@ architecture Behavioral of wb_debugger is
   signal dbg_uart_rxd_i	: std_logic;
   signal dbg_uart_txd_o	: std_logic;
   
-  signal use_dbg_uart	: std_logic := '0';
+  signal use_dbg_uart	: std_logic := '1';
   signal state_control 	: unsigned (39 downto 0) := x"0000000000";
 
 begin
