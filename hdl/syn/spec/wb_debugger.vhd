@@ -73,27 +73,27 @@ entity wb_debugger is
 end wb_debugger;
 
 architecture Behavioral of wb_debugger is
-component chipscope_ila
-    port (
-      CONTROL : inout std_logic_vector(35 downto 0);
-      CLK     : in    std_logic;
-      TRIG0   : in    std_logic_vector(31 downto 0);
-      TRIG1   : in    std_logic_vector(31 downto 0);
-      TRIG2   : in    std_logic_vector(31 downto 0);
-      TRIG3   : in    std_logic_vector(31 downto 0));
-  end component;
-
-  component chipscope_icon
-    port (
-      CONTROL0 : inout std_logic_vector (35 downto 0));
-  end component;
-
-  signal CONTROL : std_logic_vector(35 downto 0);
-  signal CLK     : std_logic;
-  signal TRIG0   : std_logic_vector(31 downto 0);
-  signal TRIG1   : std_logic_vector(31 downto 0);
-  signal TRIG2   : std_logic_vector(31 downto 0);
-  signal TRIG3   : std_logic_vector(31 downto 0);
+--component chipscope_ila
+--    port (
+--      CONTROL : inout std_logic_vector(35 downto 0);
+--      CLK     : in    std_logic;
+--      TRIG0   : in    std_logic_vector(31 downto 0);
+--      TRIG1   : in    std_logic_vector(31 downto 0);
+--      TRIG2   : in    std_logic_vector(31 downto 0);
+--      TRIG3   : in    std_logic_vector(31 downto 0));
+--  end component;
+--
+--  component chipscope_icon
+--    port (
+--      CONTROL0 : inout std_logic_vector (35 downto 0));
+--  end component;
+--
+--  signal CONTROL : std_logic_vector(35 downto 0);
+--  signal CLK     : std_logic;
+--  signal TRIG0   : std_logic_vector(31 downto 0);
+--  signal TRIG1   : std_logic_vector(31 downto 0);
+--  signal TRIG2   : std_logic_vector(31 downto 0);
+--  signal TRIG3   : std_logic_vector(31 downto 0);
 
 
   function f_check_if_lm32_firmware_necessary return boolean is
@@ -206,17 +206,17 @@ component chipscope_ila
   signal state_control 	: unsigned (39 downto 0) := x"0000000000";
 
 begin
-  trig0(0) <= use_dbg_uart;
---  trig0(1) <= uart_txd_o;
-  trig0(2) <= dbg_uart_txd_o;
-  trig0(3) <= wrpc_uart_txd_o;
-	trig0(4) <= dbg_uart_rxd_i;
-  trig0(5) <= uart_rxd_i;
-  trig0(6) <= wrpc_uart_rxd_i;
-
-  trig1 <= cnx_master_out(c_SLAVE_UART).adr;
-  trig2 <= cnx_master_out(c_SLAVE_DPRAM).adr;
-  trig3 <= cnx_slave_in(c_MASTER_LM32).adr;
+--  trig0(0) <= use_dbg_uart;
+----  trig0(1) <= uart_txd_o;
+--  trig0(2) <= dbg_uart_txd_o;
+--  trig0(3) <= wrpc_uart_txd_o;
+--	trig0(4) <= dbg_uart_rxd_i;
+--  trig0(5) <= uart_rxd_i;
+--  trig0(6) <= wrpc_uart_rxd_i;
+--
+--  trig1 <= cnx_master_out(c_SLAVE_UART).adr;
+--  trig2 <= cnx_master_out(c_SLAVE_DPRAM).adr;
+--  trig3 <= cnx_slave_in(c_MASTER_LM32).adr;
   
   dbg_indicator <= forced_lm32_reset_n;
   
@@ -419,16 +419,16 @@ begin
       sl_stall_o => slave_o.stall
       );
       
-  chipscope_ila_1 : chipscope_ila
-    port map (
-      CONTROL => CONTROL,
-      CLK     => clk_sys,
-      TRIG0   => TRIG0,
-      TRIG1   => TRIG1,
-      TRIG2   => TRIG2,
-      TRIG3   => TRIG3);
-
-  chipscope_icon_1 : chipscope_icon
-    port map (
-      CONTROL0 => CONTROL);
+--  chipscope_ila_1 : chipscope_ila
+--    port map (
+--      CONTROL => CONTROL,
+--      CLK     => clk_sys,
+--      TRIG0   => TRIG0,
+--      TRIG1   => TRIG1,
+--      TRIG2   => TRIG2,
+--      TRIG3   => TRIG3);
+--
+--  chipscope_icon_1 : chipscope_icon
+--    port map (
+--      CONTROL0 => CONTROL);
 end Behavioral;
