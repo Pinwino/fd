@@ -46,9 +46,9 @@ use work.synthesis_descriptor.all;
 
 entity wb_debugger is
 	generic(
-    g_dbg_dpram_size	    : integer := 40960/4;
+    g_dbg_dpram_size	    : integer;
     g_dbg_init_file       : string;
-    g_reset_vector	      : t_wishbone_address := x"00000000";
+    g_reset_vector	      : t_wishbone_address := x"00000000"; -- if wb_irq_lm32 from general-cores::proposed-master
     g_msi_queues 	        : natural := 1;
     g_profile		          : string  := "medium_icache_debug";
     g_internal_time_ref   : boolean := true;
@@ -73,28 +73,6 @@ entity wb_debugger is
 end wb_debugger;
 
 architecture Behavioral of wb_debugger is
---component chipscope_ila
---    port (
---      CONTROL : inout std_logic_vector(35 downto 0);
---      CLK     : in    std_logic;
---      TRIG0   : in    std_logic_vector(31 downto 0);
---      TRIG1   : in    std_logic_vector(31 downto 0);
---      TRIG2   : in    std_logic_vector(31 downto 0);
---      TRIG3   : in    std_logic_vector(31 downto 0));
---  end component;
---
---  component chipscope_icon
---    port (
---      CONTROL0 : inout std_logic_vector (35 downto 0));
---  end component;
---
---  signal CONTROL : std_logic_vector(35 downto 0);
---  signal CLK     : std_logic;
---  signal TRIG0   : std_logic_vector(31 downto 0);
---  signal TRIG1   : std_logic_vector(31 downto 0);
---  signal TRIG2   : std_logic_vector(31 downto 0);
---  signal TRIG3   : std_logic_vector(31 downto 0);
-
 
   function f_check_if_lm32_firmware_necessary return boolean is
   begin
@@ -121,7 +99,21 @@ architecture Behavioral of wb_debugger is
     else
       return 0;
     end if;
-  end function;    
+  end function;
+  
+  function f_select_dpram_size return integer is
+  begin
+    if(g_dbg_init_file = "dbg_code.ram") then
+      report "[Dbg Core] Using a 40960 Bytes size RAM." severity note;
+      return 40960;
+    elsif (g_dbg_init_file = "fd_std.ram") then
+      report "[Dbg Core] Using a 114740 Bytes RAM." severity note;
+      return 114740;
+    else
+      report "[Dbg Core] Using user specifie size RAM size." severity note;
+      return g_dbg_dpram_size;
+    end if;
+  end function;
 -- constant c_NUM_WB_MASTERS : integer := 6 + f_generate_irq_timer + f_generate_time_ref;
   constant c_NUM_WB_MASTERS : integer := 4 + f_generate_irq_timer + f_generate_time_ref;
   constant c_NUM_WB_SLAVES  : integer := 3;
@@ -154,7 +146,7 @@ architecture Behavioral of wb_debugger is
       (c_EXT_BRIDGE     => f_sdb_embed_bridge(c_EXT_BRIDGE_SDB,     x"00100000"),
        c_SLAVE_DPRAM    => f_sdb_embed_device(f_xwb_dbg_dpram(g_dbg_dpram_size), x"00000000"),
        c_SLAVE_UART     => f_sdb_embed_device(c_dbg_uart_sdb,       x"00020100"),
-       c_SLAVE_IRQ_CTRL => f_sdb_embed_device(c_dbg_irq_timer_sdb,  x"00020200"));
+       c_SLAVE_IRQ_CTRL => f_sdb_embed_device(c_dbg_irq_ctrl_sdb,   x"00020200"));
       
       adr_off := x"00020300";
     
@@ -206,18 +198,6 @@ architecture Behavioral of wb_debugger is
   signal state_control 	: unsigned (39 downto 0) := x"0000000000";
 
 begin
---  trig0(0) <= use_dbg_uart;
-----  trig0(1) <= uart_txd_o;
---  trig0(2) <= dbg_uart_txd_o;
---  trig0(3) <= wrpc_uart_txd_o;
---	trig0(4) <= dbg_uart_rxd_i;
---  trig0(5) <= uart_rxd_i;
---  trig0(6) <= wrpc_uart_rxd_i;
---
---  trig1 <= cnx_master_out(c_SLAVE_UART).adr;
---  trig2 <= cnx_master_out(c_SLAVE_DPRAM).adr;
---  trig3 <= cnx_slave_in(c_MASTER_LM32).adr;
-  
   dbg_indicator <= forced_lm32_reset_n;
   
   master_o <= cnx_master_out(c_EXT_BRIDGE);
@@ -297,7 +277,8 @@ begin
 -----------------------------------------------------------------------------  
   DBG_DPRAM : xwb_dpram
     generic map(
-      g_size                  => g_dbg_dpram_size,  --in 32-bit words
+      g_size                  => f_select_dpram_size/4,  --in 32-bit words
+--      g_size                  => g_dbg_dpram_size,  --in 32-bit words
       g_init_file             => g_dbg_init_file,
       g_must_have_init_file   => f_check_if_lm32_firmware_necessary,
       g_slave1_interface_mode => PIPELINED,
@@ -354,15 +335,15 @@ begin
         )
       port map(
         clk_sys_i     => clk_sys,           
-        rst_sys_n_i   => reset_n,             
+        rst_sys_n_i   => forced_lm32_reset_n,             
            
         tm_tai8ns_i   => std_logic_vector(local_counter),
 
         ctrl_slave_o  => cnx_master_in(c_SLAVE_TIMER_IRQ), 		 -- ctrl interface for LM32 irq processing
         ctrl_slave_i  => cnx_master_out(c_SLAVE_TIMER_IRQ),
         
-        irq_master_o  => irq_slave_i(0),                       -- wb msi interface 
-        irq_master_i  => irq_slave_o(0)
+        irq_master_o  => irq_slave_i(g_timers-1),              -- wb msi interface 
+        irq_master_i  => irq_slave_o(g_timers-1)
         );
     end generate gen_timer;
 
@@ -418,17 +399,4 @@ begin
       sl_rty_o   => slave_o.rty,
       sl_stall_o => slave_o.stall
       );
-      
---  chipscope_ila_1 : chipscope_ila
---    port map (
---      CONTROL => CONTROL,
---      CLK     => clk_sys,
---      TRIG0   => TRIG0,
---      TRIG1   => TRIG1,
---      TRIG2   => TRIG2,
---      TRIG3   => TRIG3);
---
---  chipscope_icon_1 : chipscope_icon
---    port map (
---      CONTROL0 => CONTROL);
 end Behavioral;

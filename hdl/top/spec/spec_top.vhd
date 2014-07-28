@@ -897,8 +897,9 @@ begin
 
 	U_Debugger : wb_debugger
     generic map(
-      g_dbg_init_file   => "dbg_code.ram",
-      g_dbg_dpram_size  => 114688/4
+--      g_dbg_init_file   => "dbg_code.ram"
+      g_dbg_init_file   => "fd_std.ram"
+--      g_dbg_dpram_size  => 114740/4
       )
     port map(
       clk_sys => clk_sys,
