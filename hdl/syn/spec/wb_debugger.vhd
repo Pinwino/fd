@@ -101,12 +101,26 @@ architecture Behavioral of wb_debugger is
     end if;
   end function;
   
+  function f_choose_lm32_firmware_file return string is
+  begin
+    if(g_dbg_init_file = "debugger") then
+      report "[Dbg Core] Using debugging firmware." severity note;
+      return "dbg_code.ram";
+    elsif (g_dbg_init_file = "FD_node") then
+      report "[Dbg Core] Using FMC Delay stand alone node firmware." severity note;
+      return "fd_std.ram";
+    else
+      report "[Dbg Core] Using user provided firmware."  severity note;
+      return g_dbg_init_file;
+    end if;
+  end function;
+  
   function f_select_dpram_size return integer is
   begin
-    if(g_dbg_init_file = "dbg_code.ram") then
+    if(g_dbg_init_file = "debugger") then
       report "[Dbg Core] Using a 40960 Bytes size RAM." severity note;
       return 40960;
-    elsif (g_dbg_init_file = "fd_std.ram") then
+    elsif (g_dbg_init_file = "FD_node") then
       report "[Dbg Core] Using a 114740 Bytes RAM." severity note;
       return 114740;
     else
@@ -279,7 +293,7 @@ begin
     generic map(
       g_size                  => f_select_dpram_size/4,  --in 32-bit words
 --      g_size                  => g_dbg_dpram_size,  --in 32-bit words
-      g_init_file             => g_dbg_init_file,
+      g_init_file             => f_choose_lm32_firmware_file,
       g_must_have_init_file   => f_check_if_lm32_firmware_necessary,
       g_slave1_interface_mode => PIPELINED,
       g_slave2_interface_mode => PIPELINED,
